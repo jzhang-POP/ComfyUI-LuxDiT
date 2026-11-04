@@ -68,6 +68,27 @@ def _tonemap(hdr, exposure):
     return np.clip(x ** (1.0 / 2.2), 0.0, 1.0)
 
 
+def write_exr(path, rgb):
+    """Write an HxWx3 float32 linear RGB array as .exr.
+
+    Uses the OpenEXR package; OpenCV 5 pip wheels ship without EXR support.
+    """
+    rgb = np.ascontiguousarray(rgb, dtype=np.float32)
+    try:
+        import OpenEXR
+    except ImportError:
+        OpenEXR = None
+    if OpenEXR is not None:
+        header = {"compression": OpenEXR.ZIP_COMPRESSION, "type": OpenEXR.scanlineimage}
+        with OpenEXR.File(header, {"RGB": rgb}) as f:
+            f.write(path)
+        return
+    import cv2
+
+    if not cv2.imwrite(path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)):
+        raise RuntimeError(f"[LuxDiT] could not write {path}: pip install OpenEXR")
+
+
 def _seam_blending(img, blend_width):
     """Verbatim port of hdr_merger.seam_blending from the upstream repo."""
     height, width = img.shape[:2]
@@ -307,8 +328,6 @@ class LuxDiTSaveEXR:
     CATEGORY = "LuxDiT"
 
     def save(self, hdr, filename_prefix):
-        import cv2
-
         h, w = hdr.shape[1], hdr.shape[2]
         out_dir = folder_paths.get_output_directory()
         full_dir, filename, counter, subfolder, _ = folder_paths.get_save_image_path(filename_prefix, out_dir, w, h)
@@ -320,8 +339,7 @@ class LuxDiTSaveEXR:
             rgb = np.ascontiguousarray(img[..., :3].float().cpu().numpy(), dtype=np.float32)
             name = f"{filename}_{counter:05}_"
             exr_path = os.path.join(full_dir, name + ".exr")
-            if not cv2.imwrite(exr_path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)):
-                raise RuntimeError(f"[LuxDiT] OpenCV failed to write {exr_path} (OpenEXR support missing?)")
+            write_exr(exr_path, rgb)
             print(f"[LuxDiT] saved {exr_path}")
 
             preview_name = f"luxdit_preview_{filename}_{counter:05}_.png"

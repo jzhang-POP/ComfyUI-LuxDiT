@@ -35,8 +35,9 @@ Weights download on first run into `ComfyUI/models/luxdit/`:
 - Real photos: `lora_scale` 0.8. Synthetic renders / object scans: 0.
 - Steps: 50 for images, 40 for video. Guidance 2.5.
 - Video: `luxdit_video`, frame count must be 4k+1 (trained on 7/17/25-frame clips; extra frames are dropped).
-- `diffusers` is pinned to 0.32.0 (what upstream was built against); this may clash with other nodes
-  in the same environment.
+- Upstream pins `diffusers==0.32.0`, which cannot import under transformers 5.x (current ComfyUI
+  images). This wrapper requires `diffusers>=0.42.1`, verified to run the upstream code.
+- `.exr` is written with the `OpenEXR` package: OpenCV 5 pip wheels are built without EXR support.
 - Upstream only documents Ampere-class GPUs (A100) on Linux. The bf16 transformer alone is ~11 GB.
 
 ## License
