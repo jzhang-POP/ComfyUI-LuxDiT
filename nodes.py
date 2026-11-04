@@ -32,8 +32,8 @@ TARGET_LABELS = ["rgb"]
 ADDITIONAL_TARGET_LABELS = ["env_ldr", "env_log"]
 ENV_RESOLUTIONS = {
     "128x256 (native)": (128, 256),
+    # Tested: 256x512 stays coherent; 512x1024 breaks down into blocky noise, so it is not offered.
     "256x512 (experimental)": (256, 512),
-    "512x1024 (experimental)": (512, 1024),
 }
 
 

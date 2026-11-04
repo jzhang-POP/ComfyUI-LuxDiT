@@ -32,6 +32,9 @@ Weights download on first run into `ComfyUI/models/luxdit/`:
 
 ## Settings that matter
 
+- `env_resolution`: 128x256 is what the model was trained on. 256x512 also gives a clean panorama
+  (same overall brightness, sun in the same place, but a softer/less peaked sun). 512x1024 was tested
+  and produces blocky noise, so it is not offered.
 - Real photos: `lora_scale` 0.8. Synthetic renders / object scans: 0.
 - Steps: 50 for images, 40 for video. Guidance 2.5.
 - Video: `luxdit_video`, frame count must be 4k+1 (trained on 7/17/25-frame clips; extra frames are dropped).
