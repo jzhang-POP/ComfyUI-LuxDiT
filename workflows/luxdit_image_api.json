@@ -1,0 +1,46 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "luxdit_test.png" }
+  },
+  "2": {
+    "class_type": "LuxDiTModelLoader",
+    "inputs": { "model": "luxdit_image", "precision": "bf16", "load_lora": true, "offload": "none" }
+  },
+  "3": {
+    "class_type": "LuxDiTSampler",
+    "inputs": {
+      "luxdit_pipe": ["2", 0],
+      "images": ["1", 0],
+      "resolution": "480x720",
+      "steps": 50,
+      "guidance_scale": 2.5,
+      "lora_scale": 0.8,
+      "seed": 33,
+      "max_frames": 25
+    }
+  },
+  "4": {
+    "class_type": "LuxDiTHDRMerge",
+    "inputs": {
+      "env_ldr": ["3", 0],
+      "env_log": ["3", 1],
+      "rotate_to_camera": true,
+      "seam_blending": true,
+      "flip_horizontal": true,
+      "preview_exposure": 0.0
+    }
+  },
+  "5": {
+    "class_type": "LuxDiTSaveEXR",
+    "inputs": { "hdr": ["4", 0], "filename_prefix": "luxdit/envmap" }
+  },
+  "6": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["3", 0], "filename_prefix": "luxdit/env_ldr" }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["4", 1], "filename_prefix": "luxdit/hdr_preview" }
+  }
+}
