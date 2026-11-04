@@ -8,7 +8,7 @@ diffusion transformer): image or video frames in, HDR environment map (`.exr`) o
 | Node | What it does |
 | --- | --- |
 | **LuxDiT Model Loader** | Loads `luxdit_image` or `luxdit_video` (+ optional real-scene LoRA) and the CogVideoX-5b-I2V VAE/scheduler. Downloads weights on first use. |
-| **LuxDiT Sampler** | Takes an `IMAGE` (one image, or a batch of video frames) and returns the two 256x512 panoramas the model predicts: tonemapped LDR and log-intensity. |
+| **LuxDiT Sampler** | Takes an `IMAGE` (one image, or a batch of video frames) and returns the two 128x256 panoramas the model predicts: tonemapped LDR and log-intensity. |
 | **LuxDiT HDR Merge** | Runs NVIDIA's small HDR-merge MLP on the two panoramas → linear HDR `IMAGE` (unclamped), plus a tonemapped preview. |
 | **LuxDiT Save EXR** | Writes the HDR map(s) as float `.exr` to the ComfyUI output folder. |
 
