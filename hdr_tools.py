@@ -126,11 +126,137 @@ class LuxDiTCalibrateHDR:
         return (_bhwc(x * scale), report)
 
 
+def _dirs(h, w):
+    """Unit direction per equirect pixel centre. u=0.5 is straight ahead (azimuth 0), v=0.5 the horizon."""
+    v = (torch.arange(h, dtype=torch.float64) + 0.5) / h
+    u = (torch.arange(w, dtype=torch.float64) + 0.5) / w
+    el = (0.5 - v) * np.pi
+    az = (u - 0.5) * 2 * np.pi
+    el, az = torch.meshgrid(el, az, indexing="ij")
+    return torch.stack([torch.cos(el) * torch.sin(az), torch.sin(el), torch.cos(el) * torch.cos(az)], -1)
+
+
+def _solid_angle(h, w):
+    v = (torch.arange(h, dtype=torch.float64) + 0.5) / h
+    return (torch.sin(v * np.pi) * (2 * np.pi / w) * (np.pi / h)).view(h, 1).expand(h, w)
+
+
+def _az_el(d):
+    return float(np.degrees(np.arctan2(d[0], d[2]))), float(np.degrees(np.arcsin(np.clip(d[1], -1, 1))))
+
+
+class LuxDiTSunTransfer:
+    """Give a high-res HDR panorama LuxDiT's sun.
+
+    LuxDiT estimates the sun's energy and colour from the photo, but only at
+    128x256 / 256x512. Generated or reconstructed high-res HDRs often lack a real
+    sun core. This node measures the sun lobe in LuxDiT's map (energy above the
+    surrounding sky), optionally matches the high-res map's ambient level to
+    LuxDiT's sky, and deposits a sun disc with that energy and colour into the
+    high-res map, either where the high-res panorama shows its sun glow or in
+    LuxDiT's sun direction.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "hdr": ("IMAGE", {"tooltip": "High-res linear HDR panorama."}),
+                "luxdit_hdr": ("IMAGE", {"tooltip": "LuxDiT HDR Merge output (rotate_to_camera on)."}),
+                "placement": (["panorama glow", "luxdit direction"], {"default": "panorama glow",
+                              "tooltip": "panorama glow: put the sun where the high-res image shows it, so lighting matches the visible background."}),
+                "sun_radius_deg": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 5.0, "step": 0.05,
+                                   "tooltip": "Angular radius of the sun disc. The real sun is ~0.27 deg; larger = softer shadows."}),
+                "lobe_threshold": ("FLOAT", {"default": 0.1, "min": 0.01, "max": 0.9, "step": 0.01,
+                                   "tooltip": "LuxDiT pixels above this fraction of its peak (within 20 deg) count as the sun lobe."}),
+                "match_ambient": ("BOOLEAN", {"default": True,
+                                  "tooltip": "Scale the high-res map so its sky/ambient brightness matches LuxDiT's (sun excluded)."}),
+                "sun_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.05}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("hdr", "report")
+    FUNCTION = "run"
+    CATEGORY = "LuxDiT/HDR tools"
+
+    def run(self, hdr, luxdit_hdr, placement, sun_radius_deg, lobe_threshold, match_ambient, sun_strength):
+        ref = luxdit_hdr[0, ..., :3].double().cpu()
+        h, w = ref.shape[:2]
+        lum = ref @ LUMA.double()
+        dirs = _dirs(h, w)
+        dom = _solid_angle(h, w)
+
+        # --- sun lobe in LuxDiT ---
+        peak_idx = int(lum.argmax())
+        peak_dir = dirs.view(-1, 3)[peak_idx]
+        cosang = (dirs @ peak_dir).clamp(-1, 1)
+        ang = torch.rad2deg(torch.arccos(cosang))
+        ring = (ang > 20) & (ang < 30)
+        base = ref[ring].median(dim=0).values  # sky level around the sun, per channel
+        lobe = (ang < 20) & (lum > lobe_threshold * lum.max())
+        excess = (ref - base).clamp(min=0) * lobe[..., None]
+        energy = (excess * dom[..., None]).sum((0, 1))  # per-channel, radiance * sr
+        wsum = (excess @ LUMA.double() * dom)
+        sun_dir_lux = (dirs * wsum[..., None]).sum((0, 1))
+        sun_dir_lux = sun_dir_lux / sun_dir_lux.norm()
+
+        # Ambient (sun removed) mean luminance of LuxDiT.
+        ref_ambient = ref.clone()
+        ref_ambient[lobe] = base
+        mean_ref = float(((ref_ambient @ LUMA.double()) * dom).sum() / dom.sum())
+
+        out, reports = [], []
+        for i in range(hdr.shape[0]):
+            x = hdr[i, ..., :3].double().cpu()
+            H, W = x.shape[:2]
+            # ambient match, measured at LuxDiT's resolution
+            x_lo = _resize_wrap(x.permute(2, 0, 1)[None].float(), (h, w), "area")[0].permute(1, 2, 0).double()
+            mean_x = float(((x_lo @ LUMA.double()) * dom).sum() / dom.sum())
+            scale = mean_ref / max(mean_x, 1e-9) if match_ambient else 1.0
+            x = x * scale
+
+            # where to put the sun
+            if placement == "panorama glow":
+                blur = F.avg_pool2d(x_lo.permute(2, 0, 1)[None].float(), 5, stride=1, padding=2)[0]
+                bl = (blur.permute(1, 2, 0).double() @ LUMA.double())
+                bl[: int(h * 0.02)] = 0  # ignore the pole rows, often clipped sky
+                sun_dir = dirs.view(-1, 3)[int(bl.argmax())]
+            else:
+                sun_dir = sun_dir_lux
+
+            # deposit a disc with LuxDiT's sun energy
+            D = _dirs(H, W)
+            dOm = _solid_angle(H, W)
+            a = torch.rad2deg(torch.arccos((D @ sun_dir).clamp(-1, 1)))
+            px_deg = 360.0 / W
+            wdisc = ((sun_radius_deg + 0.5 * px_deg - a) / px_deg).clamp(0, 1)  # anti-aliased edge
+            disc_sr = float((wdisc * dOm).sum())
+            radiance = energy * sun_strength / max(disc_sr, 1e-12)
+            x = x + wdisc[..., None] * radiance
+
+            az_l, el_l = _az_el(sun_dir_lux.numpy())
+            az_p, el_p = _az_el(sun_dir.numpy())
+            reports.append(
+                f"LuxDiT sun: energy (lum) {float(energy @ LUMA.double()):.4f} sr-weighted, colour rgb "
+                f"{(energy / energy.max()).numpy().round(3).tolist()}, dir az {az_l:.1f} el {el_l:.1f}\n"
+                f"placed at az {az_p:.1f} el {el_p:.1f} ({placement}), radius {sun_radius_deg} deg, "
+                f"disc radiance {float(radiance @ LUMA.double()):.1f}\n"
+                f"ambient: LuxDiT {mean_ref:.4f} vs input {mean_x:.4f} -> scale x{scale:.3f}"
+            )
+            out.append(x.float())
+        report = "\n".join(reports)
+        print("[LuxDiT sun] " + report.replace("\n", " | "))
+        return (torch.stack(out), report)
+
+
 NODE_CLASS_MAPPINGS = {
     "LuxDiTHDRDetailUpscale": LuxDiTHDRDetailUpscale,
     "LuxDiTCalibrateHDR": LuxDiTCalibrateHDR,
+    "LuxDiTSunTransfer": LuxDiTSunTransfer,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LuxDiTHDRDetailUpscale": "LuxDiT HDR Detail Upscale (gain map)",
     "LuxDiTCalibrateHDR": "LuxDiT Calibrate HDR",
+    "LuxDiTSunTransfer": "LuxDiT Sun Transfer",
 }

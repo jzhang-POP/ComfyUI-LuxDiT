@@ -63,6 +63,10 @@
   },
   "32": { "class_type": "LuxDiTHDRMerge", "inputs": { "env_ldr": ["31", 0], "env_log": ["31", 1], "rotate_to_camera": true, "seam_blending": true, "flip_horizontal": true, "preview_exposure": 0.0 } },
   "33": { "class_type": "LuxDiTSaveEXR", "inputs": { "hdr": ["32", 0], "filename_prefix": "photo2hdri/luxdit_256x512" } },
-  "34": { "class_type": "LuxDiTCalibrateHDR", "inputs": { "hdr": ["24", 0], "luxdit_hdr": ["32", 0] } },
-  "35": { "class_type": "LuxDiTSaveEXR", "inputs": { "hdr": ["34", 0], "filename_prefix": "photo2hdri/hdr_4k_calibrated" } }
+  "34": {
+    "class_type": "LuxDiTSunTransfer",
+    "inputs": { "hdr": ["24", 0], "luxdit_hdr": ["32", 0], "placement": "panorama glow", "sun_radius_deg": 0.5,
+                "lobe_threshold": 0.1, "match_ambient": true, "sun_strength": 1.0 }
+  },
+  "35": { "class_type": "LuxDiTSaveEXR", "inputs": { "hdr": ["34", 0], "filename_prefix": "photo2hdri/hdr_4k_final" } }
 }
