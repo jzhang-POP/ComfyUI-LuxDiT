@@ -30,7 +30,11 @@ COND_LABELS = {"rgb": "vae", "env_nrm": "vae"}  # order matters: rgb, then env_n
 ADDITIONAL_COND_LABELS = ["env_ldr", "env_log", "env_nrm"]
 TARGET_LABELS = ["rgb"]
 ADDITIONAL_TARGET_LABELS = ["env_ldr", "env_log"]
-ENV_COND_RESOLUTION = (128, 256)
+ENV_RESOLUTIONS = {
+    "128x256 (native)": (128, 256),
+    "256x512 (experimental)": (256, 512),
+    "512x1024 (experimental)": (512, 1024),
+}
 
 
 def _download(repo_id, local_dir, patterns):
@@ -166,6 +170,8 @@ class LuxDiTSampler:
                 "images": ("IMAGE", {"tooltip": "One image, or a batch of video frames (1, 5, 9, ... 25 frames)."}),
                 "resolution": (["480x720", "512x512"], {"default": "480x720",
                                "tooltip": "Input is resized and center-cropped to this. 512x512 suits object scans."}),
+                "env_resolution": (list(ENV_RESOLUTIONS), {"default": "128x256 (native)",
+                                   "tooltip": "Output panorama size. The model was trained at 128x256; larger sizes are experimental."}),
                 "steps": ("INT", {"default": 50, "min": 1, "max": 200,
                           "tooltip": "Upstream uses 50 for images, 40 for video."}),
                 "guidance_scale": ("FLOAT", {"default": 2.5, "min": 1.0, "max": 10.0, "step": 0.1}),
@@ -186,8 +192,8 @@ class LuxDiTSampler:
     FUNCTION = "sample"
     CATEGORY = "LuxDiT"
 
-    def sample(self, luxdit_pipe, images, resolution, steps, guidance_scale, lora_scale, seed, max_frames,
-               camera_elevation=0.0):
+    def sample(self, luxdit_pipe, images, resolution, env_resolution, steps, guidance_scale, lora_scale, seed,
+               max_frames, camera_elevation=0.0):
         render = luxdit_bridge.load()["render"]
         pipe = luxdit_pipe["pipe"]
         device = luxdit_pipe["device"]
@@ -204,7 +210,7 @@ class LuxDiTSampler:
 
         rgb = np.stack([render.resize_crop(f, (height, width)) for f in frames], axis=0)
 
-        env_nrm_raw = render.envmap_vec(ENV_COND_RESOLUTION)
+        env_nrm_raw = render.envmap_vec(ENV_RESOLUTIONS[env_resolution])
         if camera_elevation != 0:
             elevation = camera_elevation / 180 * np.pi
             c2w = torch.linalg.inv(render.get_cam_matrix(np.pi / 2, elevation))

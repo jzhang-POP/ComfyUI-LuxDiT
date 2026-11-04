@@ -13,6 +13,7 @@
       "luxdit_pipe": ["2", 0],
       "images": ["1", 0],
       "resolution": "480x720",
+      "env_resolution": "128x256 (native)",
       "steps": 50,
       "guidance_scale": 2.5,
       "lora_scale": 0.8,
