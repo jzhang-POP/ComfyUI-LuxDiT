@@ -1,0 +1,68 @@
+{
+  "1": { "class_type": "LoadImage", "inputs": { "image": "bg_test_1.png" } },
+
+  "2": { "class_type": "UnetLoaderGGUF", "inputs": { "unet_name": "qwen_image_2.1_Q5_K_M.gguf" } },
+  "3": { "class_type": "LoraLoaderModelOnly", "inputs": { "model": ["2", 0], "lora_name": "pano360_qwen21_edit_v1.safetensors", "strength_model": 1.0 } },
+  "4": { "class_type": "QwenImage21Cache", "inputs": { "model": ["3", 0], "device": "auto", "dtype": "default" } },
+  "5": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen3vl_8b_w4a8.safetensors", "type": "qwen_image", "device": "default" } },
+  "6": { "class_type": "VAELoader", "inputs": { "vae_name": "qwen_image_2.1_vae_bf16.safetensors" } },
+  "7": {
+    "class_type": "QwenPanoramaPrompt",
+    "inputs": {
+      "scene_description": "A sunlit pine forest with a narrow asphalt road running through it, tall straight pine trunks, low golden-hour sun shining through the trees, long tree shadows across the road, forest floor with dry grass, moss and pine needles",
+      "lighting": "warm golden hour sunset with long shadows",
+      "environment_type": "outdoor natural landscape",
+      "custom_details": "high fidelity equirectangular projection",
+      "negative_prompt": "blurry, low quality, distorted poles, broken seams"
+    }
+  },
+  "8": { "class_type": "QwenPanoramaLatent", "inputs": { "resolution_preset": "2048x1024 (2K VR Production 2:1)", "custom_width": 2048, "custom_height": 1024, "batch_size": 1 } },
+  "9": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": { "clip": ["5", 0], "prompt": ["7", 0], "negative_prompt": "", "resolution": 1088, "images.image_1": ["1", 0], "vae": ["6", 0] }
+  },
+  "10": {
+    "class_type": "KSampler",
+    "inputs": { "model": ["4", 0], "positive": ["9", 0], "negative": ["9", 1], "latent_image": ["8", 0],
+                "seed": 33, "steps": 25, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0 }
+  },
+  "11": { "class_type": "VAEDecode", "inputs": { "samples": ["10", 0], "vae": ["6", 0] } },
+  "12": { "class_type": "UpscaleModelLoader", "inputs": { "model_name": "RealESRGAN_x2plus.pth" } },
+  "13": {
+    "class_type": "QwenPanoramaModelUpscale",
+    "inputs": { "upscale_model": ["12", 0], "image": ["11", 0], "seamless_boundary": true, "wrap_percent": 0.05,
+                "processing_mode": "Full Frame (Best Quality)", "enable_bilateral_filter": false,
+                "bilateral_d": 5, "bilateral_sigma_color": 15.0, "bilateral_sigma_space": 4.0 }
+  },
+  "14": { "class_type": "QwenPanoramaBilateralFilter", "inputs": { "image": ["13", 0], "d": 5, "sigma_color": 15.0, "sigma_space": 4.0, "blend_opacity": 1.0, "seamless_boundary": true } },
+  "15": { "class_type": "SaveImage", "inputs": { "images": ["11", 0], "filename_prefix": "photo2hdri/pano_ldr_2k" } },
+  "16": { "class_type": "SaveImage", "inputs": { "images": ["14", 0], "filename_prefix": "photo2hdri/pano_ldr_4k" } },
+
+  "20": { "class_type": "UNETLoader", "inputs": { "unet_name": "wan2.1_vace_14B_fp16.safetensors", "weight_dtype": "default" } },
+  "21": { "class_type": "VAELoader", "inputs": { "vae_name": "wan_2.1_vae.safetensors" } },
+  "22": {
+    "class_type": "DiffHDRPano",
+    "inputs": { "preset": "fast", "model": ["20", 0], "vae": ["21", 0], "image": ["11", 0],
+                "prompt": "Restore the full dynamic range of this clipped HDRI panorama.",
+                "width": 2048, "height": 1024, "steps": 20, "seed": 42, "sampler": "res_multistep",
+                "scheduler": "simple", "shift": 8.0, "attention": "auto", "vae_precision": "fp32" }
+  },
+  "23": {
+    "class_type": "DiffHDRSaveEXR",
+    "inputs": { "images": ["22", 0], "filename_prefix": "photo2hdri/hdr_2k_diffhdr", "format": "exr", "bit_depth": "float",
+                "compression": "zip", "dwa_compression_level": 45.0, "colorspace": "linear_rec709", "start_frame": 1, "preview_exposure": 0.0 }
+  },
+  "24": { "class_type": "LuxDiTHDRDetailUpscale", "inputs": { "hdr_low": ["22", 0], "ldr_high": ["14", 0], "clip_threshold": 0.95 } },
+  "25": { "class_type": "LuxDiTSaveEXR", "inputs": { "hdr": ["24", 0], "filename_prefix": "photo2hdri/hdr_4k" } },
+
+  "30": { "class_type": "LuxDiTModelLoader", "inputs": { "model": "luxdit_image", "precision": "bf16", "load_lora": true, "offload": "none" } },
+  "31": {
+    "class_type": "LuxDiTSampler",
+    "inputs": { "luxdit_pipe": ["30", 0], "images": ["1", 0], "resolution": "480x720", "env_resolution": "256x512 (experimental)",
+                "steps": 50, "guidance_scale": 2.5, "lora_scale": 0.8, "seed": 33, "max_frames": 25 }
+  },
+  "32": { "class_type": "LuxDiTHDRMerge", "inputs": { "env_ldr": ["31", 0], "env_log": ["31", 1], "rotate_to_camera": true, "seam_blending": true, "flip_horizontal": true, "preview_exposure": 0.0 } },
+  "33": { "class_type": "LuxDiTSaveEXR", "inputs": { "hdr": ["32", 0], "filename_prefix": "photo2hdri/luxdit_256x512" } },
+  "34": { "class_type": "LuxDiTCalibrateHDR", "inputs": { "hdr": ["24", 0], "luxdit_hdr": ["32", 0] } },
+  "35": { "class_type": "LuxDiTSaveEXR", "inputs": { "hdr": ["34", 0], "filename_prefix": "photo2hdri/hdr_4k_calibrated" } }
+}
