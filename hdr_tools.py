@@ -54,7 +54,12 @@ class LuxDiTHDRDetailUpscale:
                 "ldr_high": ("IMAGE", {"tooltip": "sRGB panorama of the same view at the target size (e.g. 4096x2048)."}),
                 "clip_threshold": ("FLOAT", {"default": 0.95, "min": 0.5, "max": 1.0, "step": 0.01,
                                    "tooltip": "LDR values above this count as clipped and take the HDR's pixels."}),
-            }
+            },
+            "optional": {
+                "clip_fill": (["full rgb", "luminance only"], {"default": "full rgb",
+                              "tooltip": "luminance only (DiffusionLight-style): clipped areas take the HDR's brightness "
+                                         "but keep the panorama's own colour, which avoids colour ghosting."}),
+            },
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -62,7 +67,7 @@ class LuxDiTHDRDetailUpscale:
     FUNCTION = "run"
     CATEGORY = "LuxDiT/HDR tools"
 
-    def run(self, hdr_low, ldr_high, clip_threshold):
+    def run(self, hdr_low, ldr_high, clip_threshold, clip_fill="full rgb"):
         out = []
         for i in range(ldr_high.shape[0]):
             lo = _bchw(hdr_low[min(i, hdr_low.shape[0] - 1)][None])
@@ -83,7 +88,12 @@ class LuxDiTHDRDetailUpscale:
             mask = _resize_wrap(_resize_wrap(mask, (h, w), "area"), (H, W), "bilinear").clamp(0, 1)
             mask = torch.maximum(mask, clipped.clamp(0, 1))
 
-            hdr = detail * (1 - mask) + hdr_up * mask
+            if clip_fill == "luminance only":
+                chroma = detail / (_luma(detail) + 1e-6)
+                fill = chroma * _luma(hdr_up)
+            else:
+                fill = hdr_up
+            hdr = detail * (1 - mask) + fill * mask
             out.append(_bhwc(hdr.clamp(min=0))[0])
         return (torch.stack(out),)
 
@@ -250,13 +260,110 @@ class LuxDiTSunTransfer:
         return (torch.stack(out), report)
 
 
+class LuxDiTSunGated:
+    """Add LuxDiT's sun to a high-res HDR only when there is evidence of a real sun.
+
+    Gate (all must hold):
+      1. LuxDiT's sun lobe is above the horizon (elevation >= min_elevation_deg)
+      2. it agrees with the brightest glow in the high-res panorama (angle <= max_disagreement_deg)
+      3. the lobe carries a real share of LuxDiT's total light (fraction >= min_lobe_fraction)
+    If the gate passes, a sun disc with LuxDiT's lobe energy x sun_strength (and its colour) is placed at
+    the panorama's glow, after matching the panorama's sky level to LuxDiT. Otherwise the input is returned
+    unchanged. The report states which condition decided.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "hdr": ("IMAGE",),
+                "luxdit_hdr": ("IMAGE", {"tooltip": "LuxDiT HDR Merge output (rotate_to_camera on), native 128x256."}),
+                "min_elevation_deg": ("FLOAT", {"default": 5.0, "min": -90.0, "max": 90.0, "step": 1.0}),
+                "max_disagreement_deg": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 180.0, "step": 1.0}),
+                "min_lobe_fraction": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01,
+                                      "tooltip": "Share of LuxDiT's total solid-angle-weighted light in the sun lobe."}),
+                "sun_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+                "sun_radius_deg": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 5.0, "step": 0.05}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("hdr", "report")
+    FUNCTION = "run"
+    CATEGORY = "LuxDiT/HDR tools"
+
+    def run(self, hdr, luxdit_hdr, min_elevation_deg, max_disagreement_deg, min_lobe_fraction, sun_strength,
+            sun_radius_deg):
+        L = LUMA.double()
+        ref = luxdit_hdr[0, ..., :3].double().cpu()
+        h, w = ref.shape[:2]
+        dirs, dom = _dirs(h, w), _solid_angle(h, w)
+        lum = ref @ L
+        peak_dir = dirs.view(-1, 3)[int(lum.argmax())]
+        ang = torch.rad2deg(torch.arccos((dirs @ peak_dir).clamp(-1, 1)))
+        base = ref[(ang > 20) & (ang < 30)].median(dim=0).values
+        lobe = (ang < 20) & (lum > 0.02 * lum.max())
+        excess = (ref - base).clamp(min=0) * lobe[..., None]
+        energy = (excess * dom[..., None]).sum((0, 1))
+        total = float((lum * dom).sum())
+        frac = float(energy @ L) / max(total, 1e-12)
+        wsum = excess @ L * dom
+        sun_lux = (dirs * wsum[..., None]).sum((0, 1))
+        sun_lux = sun_lux / sun_lux.norm()
+        az_l, el_l = _az_el(sun_lux.numpy())
+        ref_amb = ref.clone()
+        ref_amb[lobe] = base
+        mean_ref = float(((ref_amb @ L) * dom).sum() / dom.sum())
+
+        out, reports = [], []
+        for i in range(hdr.shape[0]):
+            x = hdr[i, ..., :3].double().cpu()
+            H, W = x.shape[:2]
+            x_lo = _resize_wrap(x.permute(2, 0, 1)[None].float(), (h, w), "area")[0].permute(1, 2, 0).double()
+            blur = F.avg_pool2d(x_lo.permute(2, 0, 1)[None].float(), 5, stride=1, padding=2)[0]
+            bl = blur.permute(1, 2, 0).double() @ L
+            bl[: int(h * 0.02)] = 0
+            glow = dirs.view(-1, 3)[int(bl.argmax())]
+            az_g, el_g = _az_el(glow.numpy())
+            dis = float(torch.rad2deg(torch.arccos((glow @ sun_lux).clamp(-1, 1))))
+
+            checks = {
+                "elevation": el_l >= min_elevation_deg,
+                "agreement": dis <= max_disagreement_deg,
+                "lobe share": frac >= min_lobe_fraction,
+            }
+            passed = all(checks.values())
+            info = (f"LuxDiT sun az {az_l:.0f} el {el_l:.0f}, lobe share {frac:.2f}; panorama glow az {az_g:.0f} "
+                    f"el {el_g:.0f}; disagreement {dis:.0f} deg; gate "
+                    + ", ".join(f"{k} {'ok' if v else 'FAIL'}" for k, v in checks.items()))
+            if not passed:
+                out.append(x.float())
+                reports.append("NO SUN | " + info)
+                continue
+            mean_x = float(((x_lo @ L) * dom).sum() / dom.sum())
+            x = x * (mean_ref / max(mean_x, 1e-9))
+            D, dOm = _dirs(H, W), _solid_angle(H, W)
+            a = torch.rad2deg(torch.arccos((D @ glow).clamp(-1, 1)))
+            px = 360.0 / W
+            wdisc = ((sun_radius_deg + 0.5 * px - a) / px).clamp(0, 1)
+            rad = energy * sun_strength / max(float((wdisc * dOm).sum()), 1e-12)
+            x = x + wdisc[..., None] * rad
+            out.append(x.float())
+            reports.append(f"SUN ADDED (x{sun_strength}, disc radiance {float(rad @ L):.0f}) | " + info)
+        report = "\n".join(reports)
+        print("[LuxDiT sun gated] " + report.replace("\n", " || "))
+        return (torch.stack(out), report)
+
+
 NODE_CLASS_MAPPINGS = {
     "LuxDiTHDRDetailUpscale": LuxDiTHDRDetailUpscale,
     "LuxDiTCalibrateHDR": LuxDiTCalibrateHDR,
     "LuxDiTSunTransfer": LuxDiTSunTransfer,
+    "LuxDiTSunGated": LuxDiTSunGated,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LuxDiTHDRDetailUpscale": "LuxDiT HDR Detail Upscale (gain map)",
     "LuxDiTCalibrateHDR": "LuxDiT Calibrate HDR",
     "LuxDiTSunTransfer": "LuxDiT Sun Transfer",
+    "LuxDiTSunGated": "LuxDiT Sun (gated)",
 }
