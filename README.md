@@ -30,6 +30,18 @@ Weights download on first run into `ComfyUI/models/luxdit/`:
 `nvidia/LuxDiT` (only the variant you pick + `hdr_merge_mlp`, ~12 GB per variant) and the
 `vae/` + `scheduler/` folders of `zai-org/CogVideoX-5b-I2V` (~0.9 GB).
 
+## Photo → 4K HDRI (v2, recommended)
+
+`workflows/photo_to_hdri_4k_v2_api.json` is the best configuration from the 10-image Poly Haven benchmark:
+Qwen-Image 2.1 + 360 LoRA (25 steps, CFG 1) with **LuxDiT's lighting map as a second reference image**,
+pole repair (Up/Down cube faces inpainted and pasted back), RealESRGAN 4K, DiffHDR, gain-map merge, and the
+**gated sun** (`LuxDiT Sun (gated)`: adds LuxDiT's sun only when it is above the horizon, agrees with the
+panorama glow within 30°, and carries ≥15% of the light). Needs the Qwen-Image-2.1-Panorama, DiffHDR,
+ComfyUI-GGUF and ComfyUI_pytorch360convert node packs and ComfyUI ≥ v0.44.0.
+
+Benchmark (stage 4, mean of 10): si-RMSE 0.134 / 0.262 / 0.492 (diffuse / matte / mirror) vs 0.146 / 0.280 / 0.513
+without the LuxDiT reference. The sun gate never added a fake sun but found only 1 of 3 real suns.
+
 ## Settings that matter
 
 - `env_resolution`: 128x256 is what the model was trained on. 256x512 also gives a clean panorama

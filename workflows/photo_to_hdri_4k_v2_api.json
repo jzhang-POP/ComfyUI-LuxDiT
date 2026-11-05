@@ -1,0 +1,786 @@
+{
+ "1": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "bg_test_1.png"
+  }
+ },
+ "2": {
+  "class_type": "UnetLoaderGGUF",
+  "inputs": {
+   "unet_name": "qwen_image_2.1_Q5_K_M.gguf"
+  }
+ },
+ "3": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "2",
+    0
+   ],
+   "lora_name": "pano360_qwen21_edit_v1.safetensors",
+   "strength_model": 1.0
+  }
+ },
+ "4": {
+  "class_type": "QwenImage21Cache",
+  "inputs": {
+   "model": [
+    "3",
+    0
+   ],
+   "device": "auto",
+   "dtype": "default"
+  }
+ },
+ "5": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen3vl_8b_w4a8.safetensors",
+   "type": "qwen_image",
+   "device": "default"
+  }
+ },
+ "6": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+  }
+ },
+ "7": {
+  "class_type": "QwenPanoramaPrompt",
+  "inputs": {
+   "scene_description": "the same scene as the reference photo, continued naturally into a full 360 degree view with consistent lighting The second reference image is the estimated 360 degree lighting of this place: put the sun and the brightest light sources where that image is brightest.",
+   "lighting": "default",
+   "environment_type": "custom",
+   "custom_details": "high fidelity equirectangular projection",
+   "negative_prompt": "blurry, low quality, distorted poles, broken seams"
+  }
+ },
+ "8": {
+  "class_type": "QwenPanoramaLatent",
+  "inputs": {
+   "resolution_preset": "2048x1024 (2K VR Production 2:1)",
+   "custom_width": 2048,
+   "custom_height": 1024,
+   "batch_size": 1
+  }
+ },
+ "9": {
+  "class_type": "TextEncodeQwenImage21",
+  "inputs": {
+   "clip": [
+    "5",
+    0
+   ],
+   "prompt": [
+    "7",
+    0
+   ],
+   "negative_prompt": "",
+   "resolution": 1088,
+   "images.image_1": [
+    "1",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ],
+   "images.image_2": [
+    "60",
+    0
+   ]
+  }
+ },
+ "10": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "4",
+    0
+   ],
+   "positive": [
+    "9",
+    0
+   ],
+   "negative": [
+    "9",
+    1
+   ],
+   "latent_image": [
+    "8",
+    0
+   ],
+   "seed": 33,
+   "steps": 25,
+   "cfg": 1.0,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "denoise": 1.0
+  }
+ },
+ "11": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "10",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "12": {
+  "class_type": "UpscaleModelLoader",
+  "inputs": {
+   "model_name": "RealESRGAN_x2plus.pth"
+  }
+ },
+ "13": {
+  "class_type": "QwenPanoramaModelUpscale",
+  "inputs": {
+   "upscale_model": [
+    "12",
+    0
+   ],
+   "image": [
+    "103",
+    0
+   ],
+   "seamless_boundary": true,
+   "wrap_percent": 0.05,
+   "processing_mode": "Full Frame (Best Quality)",
+   "enable_bilateral_filter": false,
+   "bilateral_d": 5,
+   "bilateral_sigma_color": 15.0,
+   "bilateral_sigma_space": 4.0
+  }
+ },
+ "14": {
+  "class_type": "QwenPanoramaBilateralFilter",
+  "inputs": {
+   "image": [
+    "13",
+    0
+   ],
+   "d": 5,
+   "sigma_color": 15.0,
+   "sigma_space": 4.0,
+   "blend_opacity": 1.0,
+   "seamless_boundary": true
+  }
+ },
+ "15": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "103",
+    0
+   ],
+   "filename_prefix": "photo2hdri_v2/pano_ldr_2k"
+  }
+ },
+ "20": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "wan2.1_vace_14B_fp16.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "21": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "wan_2.1_vae.safetensors"
+  }
+ },
+ "22": {
+  "class_type": "DiffHDRPano",
+  "inputs": {
+   "preset": "fast",
+   "model": [
+    "20",
+    0
+   ],
+   "vae": [
+    "21",
+    0
+   ],
+   "image": [
+    "103",
+    0
+   ],
+   "prompt": "Restore the full dynamic range of this clipped HDRI panorama.",
+   "width": 2048,
+   "height": 1024,
+   "steps": 20,
+   "seed": 42,
+   "sampler": "res_multistep",
+   "scheduler": "simple",
+   "shift": 8.0,
+   "attention": "auto",
+   "vae_precision": "fp32"
+  }
+ },
+ "23": {
+  "class_type": "DiffHDRSaveEXR",
+  "inputs": {
+   "images": [
+    "22",
+    0
+   ],
+   "filename_prefix": "photo2hdri_v2/hdr_2k_diffhdr",
+   "format": "exr",
+   "bit_depth": "float",
+   "compression": "zip",
+   "dwa_compression_level": 45.0,
+   "colorspace": "linear_rec709",
+   "start_frame": 1,
+   "preview_exposure": 0.0
+  }
+ },
+ "24": {
+  "class_type": "LuxDiTHDRDetailUpscale",
+  "inputs": {
+   "hdr_low": [
+    "22",
+    0
+   ],
+   "ldr_high": [
+    "14",
+    0
+   ],
+   "clip_threshold": 0.95,
+   "clip_fill": "full rgb"
+  }
+ },
+ "25": {
+  "class_type": "LuxDiTSaveEXR",
+  "inputs": {
+   "hdr": [
+    "24",
+    0
+   ],
+   "filename_prefix": "photo2hdri_v2/hdr_4k_nosun"
+  }
+ },
+ "30": {
+  "class_type": "LuxDiTModelLoader",
+  "inputs": {
+   "model": "luxdit_image",
+   "precision": "bf16",
+   "load_lora": true,
+   "offload": "none"
+  }
+ },
+ "31": {
+  "class_type": "LuxDiTSampler",
+  "inputs": {
+   "luxdit_pipe": [
+    "30",
+    0
+   ],
+   "images": [
+    "1",
+    0
+   ],
+   "resolution": "480x720",
+   "env_resolution": "128x256 (native)",
+   "steps": 50,
+   "guidance_scale": 2.5,
+   "lora_scale": 0.8,
+   "seed": 33,
+   "max_frames": 25
+  }
+ },
+ "32": {
+  "class_type": "LuxDiTHDRMerge",
+  "inputs": {
+   "env_ldr": [
+    "31",
+    0
+   ],
+   "env_log": [
+    "31",
+    1
+   ],
+   "rotate_to_camera": true,
+   "seam_blending": true,
+   "flip_horizontal": true,
+   "preview_exposure": 0.0
+  }
+ },
+ "33": {
+  "class_type": "LuxDiTSaveEXR",
+  "inputs": {
+   "hdr": [
+    "32",
+    0
+   ],
+   "filename_prefix": "photo2hdri_v2/luxdit_128x256"
+  }
+ },
+ "50": {
+  "class_type": "LuxDiTSunGated",
+  "inputs": {
+   "hdr": [
+    "24",
+    0
+   ],
+   "luxdit_hdr": [
+    "32",
+    0
+   ],
+   "min_elevation_deg": 5.0,
+   "max_disagreement_deg": 30.0,
+   "min_lobe_fraction": 0.15,
+   "sun_strength": 1.0,
+   "sun_radius_deg": 0.5
+  }
+ },
+ "51": {
+  "class_type": "LuxDiTSaveEXR",
+  "inputs": {
+   "hdr": [
+    "50",
+    0
+   ],
+   "filename_prefix": "photo2hdri_v2/hdr_4k_final"
+  }
+ },
+ "60": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "32",
+    1
+   ],
+   "upscale_method": "bilinear",
+   "width": 1024,
+   "height": 512,
+   "crop": "disabled"
+  }
+ },
+ "70": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "5",
+    0
+   ],
+   "text": "seamless continuation of the surrounding scene, photorealistic, natural detail, no distortion"
+  }
+ },
+ "71": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "5",
+    0
+   ],
+   "text": "blurry, smeared, swirl, distorted, warped, seam, text, watermark"
+  }
+ },
+ "72": {
+  "class_type": "Equirectangular to Face",
+  "inputs": {
+   "e_img": [
+    "11",
+    0
+   ],
+   "face_width": 1024,
+   "padding_mode": "bilinear",
+   "cube_face": "Up"
+  }
+ },
+ "73": {
+  "class_type": "Create Pole Mask",
+  "inputs": {
+   "image": [
+    "72",
+    0
+   ],
+   "circle_radius": 0.22,
+   "pixel_radius": 0,
+   "feather": 64,
+   "mode": "face"
+  }
+ },
+ "74": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "72",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "75": {
+  "class_type": "SetLatentNoiseMask",
+  "inputs": {
+   "samples": [
+    "74",
+    0
+   ],
+   "mask": [
+    "73",
+    0
+   ]
+  }
+ },
+ "76": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "2",
+    0
+   ],
+   "positive": [
+    "70",
+    0
+   ],
+   "negative": [
+    "71",
+    0
+   ],
+   "latent_image": [
+    "75",
+    0
+   ],
+   "seed": 101,
+   "steps": 30,
+   "cfg": 2.5,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "denoise": 0.6
+  }
+ },
+ "77": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "76",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "78": {
+  "class_type": "ImageCompositeMasked",
+  "inputs": {
+   "destination": [
+    "72",
+    0
+   ],
+   "source": [
+    "77",
+    0
+   ],
+   "x": 0,
+   "y": 0,
+   "resize_source": false,
+   "mask": [
+    "73",
+    0
+   ]
+  }
+ },
+ "79": {
+  "class_type": "Face to Equirectangular",
+  "inputs": {
+   "image": [
+    "78",
+    0
+   ],
+   "face": "Up",
+   "base_equi_color": 0.0,
+   "padding_mode": "bilinear"
+  }
+ },
+ "80": {
+  "class_type": "Face Mask to Equirectangular",
+  "inputs": {
+   "mask": [
+    "73",
+    0
+   ],
+   "face": "Up",
+   "base_equi_color": 0.0,
+   "padding_mode": "bilinear"
+  }
+ },
+ "81": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "79",
+    0
+   ],
+   "upscale_method": "bilinear",
+   "width": 2048,
+   "height": 1024,
+   "crop": "disabled"
+  }
+ },
+ "82": {
+  "class_type": "MaskToImage",
+  "inputs": {
+   "mask": [
+    "80",
+    0
+   ]
+  }
+ },
+ "83": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "82",
+    0
+   ],
+   "upscale_method": "bilinear",
+   "width": 2048,
+   "height": 1024,
+   "crop": "disabled"
+  }
+ },
+ "84": {
+  "class_type": "ImageToMask",
+  "inputs": {
+   "image": [
+    "83",
+    0
+   ],
+   "channel": "red"
+  }
+ },
+ "85": {
+  "class_type": "ImageCompositeMasked",
+  "inputs": {
+   "destination": [
+    "11",
+    0
+   ],
+   "source": [
+    "81",
+    0
+   ],
+   "x": 0,
+   "y": 0,
+   "resize_source": false,
+   "mask": [
+    "84",
+    0
+   ]
+  }
+ },
+ "90": {
+  "class_type": "Equirectangular to Face",
+  "inputs": {
+   "e_img": [
+    "85",
+    0
+   ],
+   "face_width": 1024,
+   "padding_mode": "bilinear",
+   "cube_face": "Down"
+  }
+ },
+ "91": {
+  "class_type": "Create Pole Mask",
+  "inputs": {
+   "image": [
+    "90",
+    0
+   ],
+   "circle_radius": 0.22,
+   "pixel_radius": 0,
+   "feather": 64,
+   "mode": "face"
+  }
+ },
+ "92": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "90",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "93": {
+  "class_type": "SetLatentNoiseMask",
+  "inputs": {
+   "samples": [
+    "92",
+    0
+   ],
+   "mask": [
+    "91",
+    0
+   ]
+  }
+ },
+ "94": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "2",
+    0
+   ],
+   "positive": [
+    "70",
+    0
+   ],
+   "negative": [
+    "71",
+    0
+   ],
+   "latent_image": [
+    "93",
+    0
+   ],
+   "seed": 202,
+   "steps": 30,
+   "cfg": 2.5,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "denoise": 0.6
+  }
+ },
+ "95": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "94",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "96": {
+  "class_type": "ImageCompositeMasked",
+  "inputs": {
+   "destination": [
+    "90",
+    0
+   ],
+   "source": [
+    "95",
+    0
+   ],
+   "x": 0,
+   "y": 0,
+   "resize_source": false,
+   "mask": [
+    "91",
+    0
+   ]
+  }
+ },
+ "97": {
+  "class_type": "Face to Equirectangular",
+  "inputs": {
+   "image": [
+    "96",
+    0
+   ],
+   "face": "Down",
+   "base_equi_color": 0.0,
+   "padding_mode": "bilinear"
+  }
+ },
+ "98": {
+  "class_type": "Face Mask to Equirectangular",
+  "inputs": {
+   "mask": [
+    "91",
+    0
+   ],
+   "face": "Down",
+   "base_equi_color": 0.0,
+   "padding_mode": "bilinear"
+  }
+ },
+ "99": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "97",
+    0
+   ],
+   "upscale_method": "bilinear",
+   "width": 2048,
+   "height": 1024,
+   "crop": "disabled"
+  }
+ },
+ "100": {
+  "class_type": "MaskToImage",
+  "inputs": {
+   "mask": [
+    "98",
+    0
+   ]
+  }
+ },
+ "101": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "100",
+    0
+   ],
+   "upscale_method": "bilinear",
+   "width": 2048,
+   "height": 1024,
+   "crop": "disabled"
+  }
+ },
+ "102": {
+  "class_type": "ImageToMask",
+  "inputs": {
+   "image": [
+    "101",
+    0
+   ],
+   "channel": "red"
+  }
+ },
+ "103": {
+  "class_type": "ImageCompositeMasked",
+  "inputs": {
+   "destination": [
+    "85",
+    0
+   ],
+   "source": [
+    "99",
+    0
+   ],
+   "x": 0,
+   "y": 0,
+   "resize_source": false,
+   "mask": [
+    "102",
+    0
+   ]
+  }
+ }
+}
