@@ -33,14 +33,18 @@ Weights download on first run into `ComfyUI/models/luxdit/`:
 ## Photo → 4K HDRI (v2, recommended)
 
 `workflows/photo_to_hdri_4k_v2_api.json` is the best configuration from the 10-image Poly Haven benchmark:
-Qwen-Image 2.1 + 360 LoRA (25 steps, CFG 1) with **LuxDiT's lighting map as a second reference image**,
-pole repair (Up/Down cube faces inpainted and pasted back), RealESRGAN 4K, DiffHDR, gain-map merge, and the
-**gated sun** (`LuxDiT Sun (gated)`: adds LuxDiT's sun only when it is above the horizon, agrees with the
-panorama glow within 30°, and carries ≥15% of the light). Needs the Qwen-Image-2.1-Panorama, DiffHDR,
-ComfyUI-GGUF and ComfyUI_pytorch360convert node packs and ComfyUI ≥ v0.44.0.
+Qwen-Image 2.1 + 360 LoRA (25 steps, CFG 1) with **LuxDiT's lighting map as a second reference image**
+(bilinear upscale to 1024×512), **pole repair** (Up/Down cube faces inpainted with plain per-pole prompts
+and a negative prompt against invented objects, then pasted back), RealESRGAN 4K, DiffHDR, gain-map merge
+(full-colour clip fill), and the **gated sun** (`LuxDiT Sun (gated)`: adds LuxDiT's sun only when it is above
+the horizon, agrees with the panorama glow within 30°, and carries ≥15% of the light). Needs the
+Qwen-Image-2.1-Panorama, DiffHDR, ComfyUI-GGUF and ComfyUI_pytorch360convert node packs and ComfyUI ≥ v0.44.0.
 
-Benchmark (stage 4, mean of 10): si-RMSE 0.134 / 0.262 / 0.492 (diffuse / matte / mirror) vs 0.146 / 0.280 / 0.513
-without the LuxDiT reference. The sun gate never added a fake sun but found only 1 of 3 real suns.
+Benchmark (HDR before the sun step, mean of 10): si-RMSE 0.129 / 0.250 / 0.484 (diffuse / matte / mirror),
+colour error 2.64°, brightest light 38.6° from the real one; the original pipeline scored 0.146 / 0.280 / 0.513,
+2.94°, 44.9°. Tested and rejected: a generic pole prompt (invents objects on the ground), stronger pole repair,
+lanczos or blurred LuxDiT reference (slightly / clearly worse). The sun gate never adds a fake sun but finds
+only 1 of 3 real suns, and is slightly negative on average; bypass nodes 50/51 to skip it.
 
 ## Settings that matter
 

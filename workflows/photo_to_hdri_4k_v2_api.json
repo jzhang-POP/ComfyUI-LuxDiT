@@ -370,7 +370,7 @@
     "5",
     0
    ],
-   "text": "seamless continuation of the surrounding scene, photorealistic, natural detail, no distortion"
+   "text": "the view straight up: plain continuation of the same sky or ceiling as around it, simple uniform texture, photorealistic"
   }
  },
  "71": {
@@ -380,7 +380,7 @@
     "5",
     0
    ],
-   "text": "blurry, smeared, swirl, distorted, warped, seam, text, watermark"
+   "text": "face, eyes, animal, cat, dog, person, creature, object, text, logo, pattern, symmetry, blurry, smeared, swirl, distorted, seam, watermark"
   }
  },
  "72": {
@@ -642,7 +642,7 @@
     0
    ],
    "positive": [
-    "70",
+    "104",
     0
    ],
    "negative": [
@@ -781,6 +781,16 @@
     "102",
     0
    ]
+  }
+ },
+ "104": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "5",
+    0
+   ],
+   "text": "the view straight down: plain continuation of the same ground or floor surface as around it, seen from directly above, simple uniform texture, photorealistic"
   }
  }
 }
