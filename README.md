@@ -61,6 +61,8 @@ only 1 of 3 real suns, and is slightly negative on average; bypass nodes 50/51 t
 
 ## License
 
+The code in this repository is released under the [MIT License](LICENSE).
+
 LuxDiT code and weights are under the **NVIDIA OneWay Noncommercial License** (research/evaluation use
 only), and the CogVideoX base weights carry their own license. This wrapper downloads both from their
 original sources at install/run time; using them is subject to those terms.
