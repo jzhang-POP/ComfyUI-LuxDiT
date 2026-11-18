@@ -249,7 +249,7 @@
         0
       ],
       "ldr_high": [
-        "14",
+        "110",
         0
       ],
       "clip_threshold": 0.95,
@@ -330,7 +330,7 @@
         0
       ],
       "ldr_high": [
-        "14",
+        "110",
         0
       ],
       "threshold": 0.5,
@@ -360,7 +360,8 @@
       "luxdit_blend_outdoor": 0.5,
       "photo_threshold": 0.5,
       "indoor_threshold": 0.5,
-      "detector": "auto"
+      "detector": "auto",
+      "sun_halo": 0.05
     }
   },
   "51": {
@@ -844,6 +845,24 @@
         0
       ],
       "model": "Qwen/Qwen3-VL-4B-Instruct"
+    }
+  },
+  "110": {
+    "class_type": "LuxDiTPhotoPaste",
+    "inputs": {
+      "panorama": [
+        "14",
+        0
+      ],
+      "photo": [
+        "1",
+        0
+      ],
+      "feather": 0.06,
+      "min_inliers": 30
+    },
+    "_meta": {
+      "title": "LuxDiT Photo Paste"
     }
   }
 }

@@ -64,3 +64,14 @@ directional lamp next to `sky_hdr` in Blender, Unreal, Houdini, etc.
 
 ### LuxDiT Save Text (JSON)
 Saves a STRING (e.g. `sun_json`) next to the EXRs as `<prefix>_00001_.json`.
+
+## v5.2: sun halo and photo paste
+
+- **Sun halo.** A bare 0.27° disc looks like a bright dot. Real Poly Haven suns put ~5% of their energy in a glow
+  falling off as 1/angle² out to ~12° (measured on 15 real suns); `sun_halo` (default 0.05) adds exactly that.
+  Lighting is unchanged (linear metric ±0.000 on 127 blind images; mirror sphere +0.003).
+- **LuxDiT Photo Paste.** Puts the original photo back into the generated panorama: SIFT + RANSAC homography between
+  the photo and a pinhole view of the panorama's front (both are views from the same point), then a feathered paste
+  into the 4K LDR before the HDR merge, so the final HDRI shows the real photo where the camera looked. Skips itself
+  (panorama unchanged, reported) when fewer than `min_inliers` points match (8 of 79 blind images: night, snow,
+  featureless). Lighting scores unchanged; it is a visual fix. Outputs the panorama, the blend mask and a report.

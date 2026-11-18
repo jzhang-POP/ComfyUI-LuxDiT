@@ -321,9 +321,13 @@ def sun_color(el_deg):
     return np.array([np.interp(el_deg, els, cols[:, k]) for k in range(3)])
 
 
-def set_sun(m, d, target, color, radius_deg=0.5, return_parts=False):
+HALO_DEG = 12.0  # reach of the aureole (real Poly Haven suns: ~5% of the sun's energy between 0.35 and 12 deg)
+
+
+def set_sun(m, d, target, color, radius_deg=0.5, return_parts=False, halo=0.05):
     """Within CORE_DEG of d, dim only what is brighter than the surrounding sky (the generated sun and its glow;
-    darker detail such as trees stays), then add a disc with `target` of all light.
+    darker detail such as trees stays), then add a sun with `target` of all light: a disc, and a fraction `halo`
+    of the sun's energy in an aureole falling off as 1/theta^2 out to HALO_DEG (a bare disc looks like a dot).
     return_parts: also return the sun-free sky and the sun's energy (luminance integrated over its disc)."""
     h, w = m.shape[:2]
     a = _angles(h, w, d)
@@ -342,7 +346,13 @@ def set_sun(m, d, target, color, radius_deg=0.5, return_parts=False):
         wd = (a == a.min()).astype(float)
     c = np.asarray(color, float)
     sky = out.astype(np.float32) if return_parts else None
-    out += wd[..., None] * (c / float(c @ LUMA) * e_sun / float((wd * dom).sum()))
+    e = c / float(c @ LUMA) * e_sun
+    halo = max(float(halo), 0.0)
+    out += wd[..., None] * ((1 - halo) * e / float((wd * dom).sum()))
+    if halo > 0:
+        t = np.clip(a / HALO_DEG, 0, 1)
+        wa = (1.0 - t * t) ** 2 / (a * a + radius_deg * radius_deg)
+        out += wa[..., None] * (halo * e / float((wa * dom).sum()))
     if return_parts:
         return out.astype(np.float32), sky, float(e_sun)
     return out.astype(np.float32)
@@ -520,6 +530,10 @@ class LuxDiTSunPrior:
                                           "mirror penalty. Raise it for softer shadows."}),
         }, "optional": {
             "luxdit_hdr": ("IMAGE", {"tooltip": "LuxDiT HDR Merge output (rotate_to_camera on). Enables the blend."}),
+            "sun_halo": ("FLOAT", {"default": 0.05, "min": 0.0, "max": 0.5, "step": 0.01,
+                         "tooltip": "Share of the sun's energy in the glow around its disc (falls off as 1/angle^2 out "
+                                    "to 12 deg). Real suns: ~0.05. 0 = a bare disc (looks like a bright dot); raise it "
+                                    "for hazy skies. Lighting and shadows barely change."}),
             "luxdit_blend": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 1.0, "step": 0.05,
                              "tooltip": "How far to move the low-frequency lighting toward LuxDiT's (0 = off)."}),
             "direction_fallback": ("FLOAT", {"default": 1.1, "min": 0.0, "max": 3.0, "step": 0.05,
@@ -585,7 +599,7 @@ class LuxDiTSunPrior:
                 direction_fallback=1.1, sun_mode="auto", direction="auto", points="", sun_azimuth=0.0,
                 sun_elevation=30.0, snap_deg=3.0, sun_kelvin=0.0, strength_preset="custom (target_share)", sun_ev=0.0,
                 p_sunny=None, p_indoor=None, photo_threshold=0.5, indoor_threshold=0.5, luxdit_blend_outdoor=0.5,
-                detector="auto"):
+                detector="auto", sun_halo=0.05):
         import json
         target_share = effective_share(target_share, strength_preset, sun_ev)
         out, skies, previews, infos, reports = [], [], [], [], []
@@ -658,7 +672,7 @@ class LuxDiTSunPrior:
                 continue
             az, el = _az_el(d)
             color = kelvin_rgb(sun_kelvin) if sun_kelvin > 0 else sun_color(el)
-            res, sky, e_sun = set_sun(m, d, target_share, color, sun_radius_deg, return_parts=True)
+            res, sky, e_sun = set_sun(m, d, target_share, color, sun_radius_deg, return_parts=True, halo=sun_halo)
             out.append(torch.from_numpy(res))
             skies.append(torch.from_numpy(sky))
             col = np.asarray(color, float) / float(np.asarray(color, float) @ LUMA)
@@ -667,7 +681,7 @@ class LuxDiTSunPrior:
                           "irradiance": e_sun, "rgb": [round(float(v), 4) for v in col],
                           "lamp_color": [round(float(v), 4) for v in col / col.max()],
                           "lamp_strength": e_sun * float(col.max()),
-                          "angular_diameter_deg": 2 * float(sun_radius_deg), "source": how, "detector_p": round(p, 3),
+                          "angular_diameter_deg": 2 * float(sun_radius_deg), "halo_fraction": float(sun_halo), "source": how, "detector_p": round(p, 3),
                           "convention": "azimuth 0 = photo centre (panorama centre), +90 = right, 180 = behind; "
                                         "elevation above the horizon; direction_xyz = (right, up, forward); "
                                         "irradiance and lamp_strength in the HDR's own units (sun luminance "
