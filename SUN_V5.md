@@ -15,7 +15,10 @@ Needs numpy, OpenCV and torch (already in ComfyUI). The photo check also needs `
 | v5, sun off | −16 % | unchanged | −0.011 | +0.005 |
 
 - Indoor and night scenes are left alone (LuxDiT's lighting and added suns made them worse).
-- Outdoors, 50 % of LuxDiT's low-frequency lighting is blended in.
+- Outdoors, 50 % of LuxDiT's low-frequency lighting is blended in, as a smooth brightness gain that never dims
+  any part of the panorama below 0.7× (v5.1; the earlier added correction could turn dark ground into a brown
+  smudge or put a white haze on dark forest floors). On 127 blind images v5.1 vs v5: matte −0.010, mirror −0.008,
+  diffuse +0.004, linear metric unchanged.
 - The sun is added only when the **photo** looks sunny (vision-language model), placed at the panorama's glow,
   carrying 55 % of all light (real suns: about 70 %).
 - The standard benchmark's mirror sphere only rewards a sun in exactly the right 1.4° pixel, so it gets worse

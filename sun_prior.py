@@ -393,30 +393,51 @@ def _peak_ratio(m):
     return float(bl.max() / max(np.median(lum), 1e-12))
 
 
-def blend_toward_luxdit(m, lux, alpha, floor=0.05):
+def _wrap_blur(x, frac=1 / 24.0):
+    """Gaussian blur of an equirect map, wrapping in azimuth (sigma = frac of the width)."""
+    h, w = x.shape[:2]
+    s = max(1.0, w * frac)
+    p = min(w, int(3 * s) + 1)
+    xp = np.concatenate([x[:, -p:], x, x[:, :p]], 1).astype(np.float32)
+    return cv2.GaussianBlur(xp, (0, 0), s, borderType=cv2.BORDER_REFLECT)[:, p:p + w].astype(np.float64)
+
+
+def _sh_reconstruct(c, h, w):
+    return np.einsum("hwk,kc->hwc", _sh_basis(h, w), c)
+
+
+def blend_toward_luxdit(m, lux, alpha, lo=0.7, hi=4.0, iters=3):
     """Move m's order-2 (diffuse-scale) lighting `alpha` of the way toward LuxDiT's, suns excluded.
-    Coefficients are measured on a 512x1024 area-downsample (exact for order-2 lighting, and what the lab
-    validated); the correction is applied to the full map in float32, 256 rows at a time (low RAM at 4K)."""
-    ms = m if m.shape[0] <= 512 else cv2.resize(m[..., :3].astype(np.float32), (1024, 512), interpolation=cv2.INTER_AREA)
+    The change is a smooth per-channel gain on m, clamped to [lo, hi]: dark detail keeps its contrast and
+    nothing is dimmed below `lo` (an added correction used to floor dark ground into a brown smudge).
+    The gain is solved on a 512x1024 area-downsample and applied to the full map in float32, 256 rows at a time."""
+    if alpha == 0:
+        return m[..., :3].astype(np.float32)
+    ms = m[..., :3].astype(np.float32)
+    if ms.shape[0] > 512:
+        ms = cv2.resize(ms, (1024, 512), interpolation=cv2.INTER_AREA)
     dm, dl = brightest_dir(ms), brightest_dir(lux)
     m_amb = _remove_sun(ms, dm, 5.0) if dm is not None and _peak_ratio(ms) >= 300 else ms
     l_amb = _remove_sun(lux, dl, 15.0) if dl is not None and _peak_ratio(lux) >= 30 else lux
-    cm, cr = _sh_project(m_amb), _sh_project(l_amb)
+    amb = m_amb[..., :3].astype(np.float64)
+    cm, cr = _sh_project(amb), _sh_project(l_amb)
     cr = cr * (cm[0] / np.maximum(cr[0], 1e-12))
-    delta = (alpha * (cr - cm)).astype(np.float32)
+    want = cm + alpha * (cr - cm)
+    sh, sw = amb.shape[:2]
+    base = np.maximum(_wrap_blur(amb), 1e-6 * max(float(amb.mean()), 1e-12))
+    g, cur = np.ones_like(base), cm
+    for _ in range(iters):
+        g = np.clip(g + _sh_reconstruct(want - cur, sh, sw) / base, lo, hi)
+        g = np.clip(_wrap_blur(g), lo, hi)
+        cur = _sh_project(amb * g)
     h, w = m.shape[:2]
+    g = g.astype(np.float32)
+    if (sh, sw) != (h, w):
+        g = np.clip(cv2.resize(g, (w, h), interpolation=cv2.INTER_LINEAR), lo, hi)
     out = np.empty((h, w, 3), np.float32)
     for r0 in range(0, h, 256):
         rows = slice(r0, min(h, r0 + 256))
-        el = ((0.5 - (np.arange(h)[rows] + 0.5) / h) * np.pi).astype(np.float32)[:, None]
-        az = (((np.arange(w) + 0.5) / w - 0.5) * 2 * np.pi).astype(np.float32)[None, :]
-        x, y, z = np.cos(el) * np.sin(az), np.sin(el) * np.ones_like(az), np.cos(el) * np.cos(az)
-        basis = (0.282095 * np.ones_like(x), 0.488603 * y, 0.488603 * z, 0.488603 * x, 1.092548 * x * y,
-                 1.092548 * y * z, 0.315392 * (3 * z * z - 1), 1.092548 * x * z, 0.546274 * (x * x - y * y))
-        band = m[rows, :, :3].astype(np.float32).copy()
-        for k, b in enumerate(basis):
-            band += b[..., None] * delta[k]
-        out[rows] = np.maximum(band, floor * m[rows, :, :3])
+        out[rows] = m[rows, :, :3].astype(np.float32) * g[rows]
     return out
 
 
