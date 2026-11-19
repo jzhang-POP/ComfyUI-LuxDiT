@@ -858,8 +858,11 @@
         "1",
         0
       ],
-      "feather": 0.06,
-      "min_inliers": 30
+      "feather": 0.03,
+      "min_inliers": 30,
+      "align": true,
+      "seam": true,
+      "detail_fade": 0.1
     },
     "_meta": {
       "title": "LuxDiT Photo Paste"
