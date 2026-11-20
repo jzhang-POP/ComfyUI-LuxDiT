@@ -569,7 +569,7 @@ class LuxDiTSunPrior:
             "detector": (["auto", "v3", "v1"], {"default": "auto",
                          "tooltip": "Built-in sun detector (used when no photo check is connected). v3 also reads "
                                     "LuxDiT's sun and needs luxdit_hdr; auto = v3 when it is connected, else v1."}),
-            "luxdit_blend_outdoor": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
+            "luxdit_blend_outdoor": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.05,
                                      "tooltip": "LuxDiT blend used instead of luxdit_blend when the photo check says "
                                                 "the scene is outdoors (it helps outdoors and hurts indoors/at night)."}),
             "photo_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
@@ -598,7 +598,7 @@ class LuxDiTSunPrior:
     def compute(self, hdr, ldr_high, threshold, target_share, sun_radius_deg, luxdit_hdr=None, luxdit_blend=0.25,
                 direction_fallback=1.1, sun_mode="auto", direction="auto", points="", sun_azimuth=0.0,
                 sun_elevation=30.0, snap_deg=3.0, sun_kelvin=0.0, strength_preset="custom (target_share)", sun_ev=0.0,
-                p_sunny=None, p_indoor=None, photo_threshold=0.5, indoor_threshold=0.5, luxdit_blend_outdoor=0.5,
+                p_sunny=None, p_indoor=None, photo_threshold=0.5, indoor_threshold=0.5, luxdit_blend_outdoor=0.75,
                 detector="auto", sun_halo=0.05):
         import json
         target_share = effective_share(target_share, strength_preset, sun_ev)

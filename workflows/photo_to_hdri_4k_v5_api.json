@@ -357,7 +357,7 @@
         "55",
         1
       ],
-      "luxdit_blend_outdoor": 0.5,
+      "luxdit_blend_outdoor": 0.75,
       "photo_threshold": 0.5,
       "indoor_threshold": 0.5,
       "detector": "auto",
