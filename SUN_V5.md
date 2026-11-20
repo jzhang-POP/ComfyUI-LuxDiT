@@ -46,6 +46,7 @@ Outputs: `hdr`, `report`, `preview` (tone-mapped, with markers), `sun_json`, `sk
 | `sun_radius_deg` | disc radius = shadow softness (default 0.27 = the real sun; same lighting as 0.5, smaller benchmark mirror penalty) |
 | `sun_kelvin` | colour temperature; 0 = automatic from elevation |
 | `luxdit_blend` / `luxdit_blend_outdoor` | LuxDiT low-frequency blend without / with the photo check saying outdoors (0.25 / 0.75) |
+| `luxdit_blend_disagree` | Outdoor blend used instead when LuxDiT and the panorama disagree on which side of the sky is brighter (agreement < 0.8; LuxDiT is usually right then) (1.0) |
 | `threshold`, `detector` | built-in detector when no photo check: v3 (needs `luxdit_hdr`) or v1 |
 | `photo_threshold`, `indoor_threshold` | thresholds on `p_sunny` / `p_indoor` (0.5 / 0.5) |
 

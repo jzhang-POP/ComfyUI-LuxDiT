@@ -416,11 +416,23 @@ def _sh_reconstruct(c, h, w):
     return np.einsum("hwk,kc->hwc", _sh_basis(h, w), c)
 
 
-def blend_toward_luxdit(m, lux, alpha, lo=0.7, hi=4.0, iters=3):
+AGREE_THR = 0.8  # below this light_agreement, LuxDiT's bright side wins (dev: it is usually the one that is right)
+
+
+def light_agreement(a, b):
+    """Cosine between the order-1 (dominant-side) lighting directions of two maps, on luminance: 1 = the light
+    comes from the same side, -1 = the bright side is flipped. Pass sun-free maps to compare the sky/ambient."""
+    va, vb = (_sh_project(np.asarray(x, np.float64))[1:4] @ LUMA for x in (a, b))
+    return float(va @ vb / max(np.linalg.norm(va) * np.linalg.norm(vb), 1e-12))
+
+
+def blend_toward_luxdit(m, lux, alpha, lo=0.7, hi=4.0, iters=3, disagree=None, info=None):
     """Move m's order-2 (diffuse-scale) lighting `alpha` of the way toward LuxDiT's, suns excluded.
     The change is a smooth per-channel gain on m, clamped to [lo, hi]: dark detail keeps its contrast and
     nothing is dimmed below `lo` (an added correction used to floor dark ground into a brown smudge).
-    The gain is solved on a 512x1024 area-downsample and applied to the full map in float32, 256 rows at a time."""
+    The gain is solved on a 512x1024 area-downsample and applied to the full map in float32, 256 rows at a time.
+    disagree=(threshold, alpha2): use alpha2 when light_agreement of the sun-free maps is below threshold.
+    info: optional dict, filled with the alpha used and the agreement."""
     if alpha == 0:
         return m[..., :3].astype(np.float32)
     ms = m[..., :3].astype(np.float32)
@@ -429,6 +441,13 @@ def blend_toward_luxdit(m, lux, alpha, lo=0.7, hi=4.0, iters=3):
     dm, dl = brightest_dir(ms), brightest_dir(lux)
     m_amb = _remove_sun(ms, dm, 5.0) if dm is not None and _peak_ratio(ms) >= 300 else ms
     l_amb = _remove_sun(lux, dl, 15.0) if dl is not None and _peak_ratio(lux) >= 30 else lux
+    if disagree is not None:
+        cos = light_agreement(m_amb, l_amb)
+        alpha = disagree[1] if cos < disagree[0] else alpha
+        if info is not None:
+            info["agreement"] = cos
+    if info is not None:
+        info["alpha"] = alpha
     amb = m_amb[..., :3].astype(np.float64)
     cm, cr = _sh_project(amb), _sh_project(l_amb)
     cr = cr * (cm[0] / np.maximum(cr[0], 1e-12))
@@ -572,6 +591,10 @@ class LuxDiTSunPrior:
             "luxdit_blend_outdoor": ("FLOAT", {"default": 0.75, "min": 0.0, "max": 1.0, "step": 0.05,
                                      "tooltip": "LuxDiT blend used instead of luxdit_blend when the photo check says "
                                                 "the scene is outdoors (it helps outdoors and hurts indoors/at night)."}),
+            "luxdit_blend_disagree": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                                      "tooltip": "Outdoor LuxDiT blend used instead when LuxDiT and the panorama "
+                                                 "disagree on which side of the sky is brighter (LuxDiT is usually "
+                                                 "right then). Set it equal to luxdit_blend_outdoor to turn this off."}),
             "photo_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
                                 "tooltip": "p_sunny needed to add a sun in auto mode."}),
             "indoor_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
@@ -599,7 +622,7 @@ class LuxDiTSunPrior:
                 direction_fallback=1.1, sun_mode="auto", direction="auto", points="", sun_azimuth=0.0,
                 sun_elevation=30.0, snap_deg=3.0, sun_kelvin=0.0, strength_preset="custom (target_share)", sun_ev=0.0,
                 p_sunny=None, p_indoor=None, photo_threshold=0.5, indoor_threshold=0.5, luxdit_blend_outdoor=0.75,
-                detector="auto", sun_halo=0.05):
+                detector="auto", sun_halo=0.05, luxdit_blend_disagree=1.0):
         import json
         target_share = effective_share(target_share, strength_preset, sun_ev)
         out, skies, previews, infos, reports = [], [], [], [], []
@@ -621,7 +644,11 @@ class LuxDiTSunPrior:
             indoor = p_indoor is not None and p_indoor >= indoor_threshold
             alpha = luxdit_blend_outdoor if p_indoor is not None else luxdit_blend
             if lux is not None and alpha > 0 and not indoor:  # LuxDiT's lighting helps outdoors, hurts indoors
-                m = blend_toward_luxdit(m, lux, alpha)
+                binfo = {}
+                dis = (AGREE_THR, luxdit_blend_disagree) if p_indoor is not None else None
+                m = blend_toward_luxdit(m, lux, alpha, disagree=dis, info=binfo)
+                note += f" | LuxDiT blend {binfo['alpha']:.2f}" + (
+                    f" (agreement {binfo['agreement']:.2f})" if "agreement" in binfo else "")
             ldr = _finite(_np(ldr_high[min(i, ldr_high.shape[0] - 1), ..., :3]))[0]
             use_v3 = lux is not None and detector in ("auto", "v3")
             p, _ = sun_probability_v3(ldr, lux) if use_v3 else sun_probability(ldr)
